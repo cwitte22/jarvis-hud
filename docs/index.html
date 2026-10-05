@@ -1,0 +1,740 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#02060b">
+<title>J.A.R.V.I.S.</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;800&family=Rajdhani:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/globe.gl@2.46.2/dist/globe.gl.min.js"></script>
+<style>
+  :root {
+    --bg: #02060b;
+    --cyan: #34e4ff;
+    --cyan-dim: rgba(52, 228, 255, 0.55);
+    --cyan-faint: rgba(52, 228, 255, 0.12);
+    --gold: #ffb43a;
+    --red: #ff4d5e;
+    --green: #4dffb0;
+    --text: #cdefff;
+    --muted: #6b97ad;
+    --panel: rgba(6, 22, 34, 0.62);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    background: radial-gradient(ellipse at 50% 40%, #06202f 0%, var(--bg) 65%);
+    color: var(--text);
+    font-family: "Rajdhani", system-ui, sans-serif;
+    font-size: 16px;
+    overflow-x: hidden;
+    -webkit-font-smoothing: antialiased;
+  }
+  body::before { /* scanlines */
+    content: ""; position: fixed; inset: 0; pointer-events: none; z-index: 50;
+    background: repeating-linear-gradient(to bottom, rgba(52,228,255,0.035) 0 1px, transparent 1px 3px);
+  }
+  .grid-bg {
+    position: fixed; inset: 0; pointer-events: none; z-index: 0; opacity: .35;
+    background-image:
+      linear-gradient(var(--cyan-faint) 1px, transparent 1px),
+      linear-gradient(90deg, var(--cyan-faint) 1px, transparent 1px);
+    background-size: 48px 48px;
+    mask-image: radial-gradient(ellipse at center, black 30%, transparent 75%);
+    -webkit-mask-image: radial-gradient(ellipse at center, black 30%, transparent 75%);
+  }
+
+  /* ---------- layout ---------- */
+  .hud {
+    position: relative; z-index: 1;
+    display: grid;
+    grid-template-columns: minmax(250px, 1fr) minmax(360px, 2.2fr) minmax(250px, 1fr);
+    grid-template-rows: auto 1fr auto;
+    gap: 14px;
+    min-height: 100vh;
+    padding: 16px 18px;
+  }
+  header {
+    grid-column: 1 / -1;
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    border-bottom: 1px solid var(--cyan-faint); padding-bottom: 10px;
+  }
+  .brand { font-family: "Orbitron"; font-weight: 800; letter-spacing: .35em; color: var(--cyan); font-size: 20px; text-shadow: 0 0 12px var(--cyan-dim); }
+  .brand small { display: block; font-family: "Rajdhani"; font-weight: 500; letter-spacing: .25em; font-size: 11px; color: var(--muted); text-shadow: none; }
+  .status-pill { font-family: "Orbitron"; font-size: 11px; letter-spacing: .2em; color: var(--green); display: flex; align-items: center; gap: 8px; }
+  .status-pill .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); box-shadow: 0 0 10px var(--green); animation: blink 2s infinite; }
+  .col { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+
+  .panel {
+    position: relative;
+    background: var(--panel);
+    border: 1px solid var(--cyan-faint);
+    padding: 14px 16px 16px;
+    backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
+    clip-path: polygon(0 0, calc(100% - 14px) 0, 100% 14px, 100% 100%, 14px 100%, 0 calc(100% - 14px));
+  }
+  .panel::before, .panel::after { content: ""; position: absolute; width: 14px; height: 14px; border-color: var(--cyan); border-style: solid; opacity: .8; }
+  .panel::before { top: 0; left: 0; border-width: 2px 0 0 2px; }
+  .panel::after { bottom: 0; right: 0; border-width: 0 2px 2px 0; }
+  .panel h2 {
+    font-family: "Orbitron"; font-size: 11px; font-weight: 600; letter-spacing: .28em;
+    color: var(--cyan); margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center;
+  }
+  .panel h2 .tag { color: var(--muted); font-size: 9px; letter-spacing: .2em; }
+  .big { font-family: "Orbitron"; font-weight: 600; color: #eafaff; text-shadow: 0 0 14px var(--cyan-dim); line-height: 1; }
+  .muted { color: var(--muted); }
+  .row { display: flex; justify-content: space-between; gap: 10px; padding: 4px 0; border-bottom: 1px dashed rgba(52,228,255,.08); font-size: 15px; }
+  .row:last-child { border-bottom: 0; }
+  .row b { font-weight: 600; color: #eafaff; text-align: right; }
+
+  /* clock */
+  #clock { font-size: 46px; letter-spacing: .04em; }
+  #clock .sec { font-size: 20px; color: var(--cyan); }
+  #date { margin-top: 6px; letter-spacing: .18em; font-size: 13px; color: var(--muted); text-transform: uppercase; }
+
+  /* weather */
+  .wx { display: flex; align-items: center; gap: 14px; }
+  #wxTemp { font-size: 42px; }
+  #wxDesc { font-size: 17px; font-weight: 600; }
+
+  /* globe */
+  .center { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+  .globe-wrap { position: relative; flex: 1; min-height: 420px; overflow: hidden; }
+  #globe { position: absolute; inset: 0; }
+  .globe-wrap .corner { position: absolute; font-family: "Orbitron"; font-size: 10px; letter-spacing: .2em; color: var(--muted); z-index: 2; pointer-events: none; }
+  .corner.tl { top: 10px; left: 14px; } .corner.tr { top: 10px; right: 14px; text-align: right; }
+  .corner.bl { bottom: 10px; left: 14px; } .corner.br { bottom: 10px; right: 14px; text-align: right; }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; margin-right: 12px; }
+  .legend i { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+  .globe-btns { position: absolute; bottom: 34px; right: 14px; z-index: 3; display: flex; gap: 6px; }
+  .iss-tag { font-family: "Orbitron"; font-size: 10px; color: var(--gold); letter-spacing: .15em; white-space: nowrap; transform: translate(-50%, -140%); text-shadow: 0 0 8px rgba(255,180,58,.8); pointer-events: none; }
+  .iss-tag::after { content: ""; display: block; width: 10px; height: 10px; margin: 4px auto 0; border: 2px solid var(--gold); transform: rotate(45deg); box-shadow: 0 0 10px var(--gold); }
+
+  button, .btn {
+    font-family: "Orbitron"; font-size: 10px; letter-spacing: .2em; text-transform: uppercase;
+    background: rgba(52,228,255,.06); color: var(--cyan); border: 1px solid var(--cyan-dim);
+    padding: 8px 12px; cursor: pointer; transition: background .2s, box-shadow .2s;
+  }
+  button:hover { background: rgba(52,228,255,.16); box-shadow: 0 0 14px rgba(52,228,255,.35); }
+  button.on { background: rgba(255,77,94,.15); border-color: var(--red); color: var(--red); }
+
+  /* jarvis voice bar */
+  .voice { display: grid; grid-template-columns: auto 1fr; gap: 18px; align-items: center; }
+  .reactor { position: relative; width: 112px; height: 112px; cursor: pointer; flex: none; border: 0; background: none; padding: 0; }
+  .reactor:hover { box-shadow: none; background: none; }
+  .reactor .ring { position: absolute; inset: 0; border-radius: 50%; border: 2px solid var(--cyan-dim); }
+  .reactor .r1 { border-style: dashed; animation: spin 14s linear infinite; }
+  .reactor .r2 { inset: 12px; border-width: 6px; border-color: rgba(52,228,255,.25); border-top-color: var(--cyan); border-bottom-color: var(--cyan); animation: spin 6s linear infinite reverse; }
+  .reactor .r3 { inset: 28px; border-width: 1px; box-shadow: inset 0 0 18px rgba(52,228,255,.5); }
+  .reactor .core { position: absolute; inset: 38px; border-radius: 50%; background: radial-gradient(circle, #fff 0%, #9ff3ff 30%, var(--cyan) 60%, rgba(52,228,255,0) 75%); box-shadow: 0 0 30px var(--cyan), 0 0 60px rgba(52,228,255,.5); animation: pulse 3s ease-in-out infinite; }
+  .reactor.speaking .core { animation: talk .18s ease-in-out infinite alternate; }
+  .reactor.speaking .r2 { animation-duration: 1.2s; }
+  .reactor.listening .core { background: radial-gradient(circle, #fff 0%, #ffd9a0 30%, var(--gold) 60%, rgba(255,180,58,0) 75%); box-shadow: 0 0 30px var(--gold), 0 0 60px rgba(255,180,58,.5); }
+  .reactor.listening .r2 { border-top-color: var(--gold); border-bottom-color: var(--gold); }
+  .voice-main { min-width: 0; }
+  #say { font-size: 19px; font-weight: 500; color: #eafaff; min-height: 2.6em; line-height: 1.3; }
+  #heard { font-size: 14px; color: var(--gold); min-height: 1.2em; margin: 4px 0 10px; letter-spacing: .04em; }
+  .cmd { display: flex; gap: 8px; flex-wrap: wrap; }
+  .cmd input {
+    flex: 1 1 180px; min-width: 0; background: rgba(0,0,0,.35); border: 1px solid var(--cyan-faint); color: var(--text);
+    font-family: "Rajdhani"; font-size: 16px; padding: 7px 10px; outline: none;
+  }
+  .cmd input:focus { border-color: var(--cyan-dim); }
+  .hints { margin-top: 8px; font-size: 13px; color: var(--muted); }
+  .hints code { color: var(--cyan); font-family: inherit; }
+
+  /* lists */
+  ol.news { list-style: none; counter-reset: n; }
+  ol.news li { counter-increment: n; padding: 6px 0; border-bottom: 1px dashed rgba(52,228,255,.08); font-size: 15px; line-height: 1.25; display: grid; grid-template-columns: 22px 1fr; }
+  ol.news li::before { content: counter(n, decimal-leading-zero); font-family: "Orbitron"; font-size: 10px; color: var(--cyan); padding-top: 3px; }
+  ol.news a { color: var(--text); text-decoration: none; }
+  ol.news a:hover { color: var(--cyan); }
+  #fact { font-size: 16px; line-height: 1.35; }
+  #onthisday { font-size: 14px; line-height: 1.35; margin-top: 10px; padding-top: 10px; border-top: 1px dashed rgba(52,228,255,.15); }
+  .proto { display: flex; align-items: center; gap: 8px; font-size: 14px; padding: 3px 0; }
+  .proto i { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); flex: none; }
+  .proto.ok i { background: var(--green); box-shadow: 0 0 8px var(--green); }
+  .proto.bad i { background: var(--red); box-shadow: 0 0 8px var(--red); }
+  .proto span:last-child { margin-left: auto; font-family: "Orbitron"; font-size: 9px; letter-spacing: .15em; color: var(--muted); }
+  .bar { height: 4px; background: rgba(52,228,255,.1); margin-top: 6px; }
+  .bar > div { height: 100%; background: var(--cyan); box-shadow: 0 0 8px var(--cyan); width: 0; transition: width 1s; }
+
+  /* boot */
+  #boot {
+    position: fixed; inset: 0; z-index: 100; background: var(--bg);
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 22px; padding: 16px;
+    transition: opacity .8s; cursor: pointer;
+  }
+  #boot.gone { opacity: 0; pointer-events: none; }
+  #boot .reactor { width: 150px; height: 150px; }
+  #boot .reactor .core { inset: 52px; }
+  #boot .reactor .r3 { inset: 38px; }
+  #boot .reactor .r2 { inset: 16px; }
+  #bootLog { font-family: "Orbitron"; font-size: 11px; letter-spacing: .18em; color: var(--cyan); min-height: 120px; width: min(460px, 100%); line-height: 1.9; }
+  #bootLog .ok { color: var(--green); float: right; }
+  #bootGo { font-family: "Orbitron"; font-size: 12px; letter-spacing: .4em; color: var(--gold); opacity: 0; transition: opacity .5s; animation: blink 1.6s infinite; }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @keyframes pulse { 0%,100% { transform: scale(.92); opacity: .85; } 50% { transform: scale(1.05); opacity: 1; } }
+  @keyframes talk { from { transform: scale(.85); } to { transform: scale(1.15); } }
+  @keyframes blink { 50% { opacity: .35; } }
+
+  /* ---------- responsive ---------- */
+  @media (min-width: 1101px) and (min-height: 700px) {
+    /* one screen, no page scroll: side columns scroll on their own if they overflow */
+    .hud { height: 100vh; min-height: 0; }
+    .col { overflow-y: auto; scrollbar-width: none; }
+    .col::-webkit-scrollbar { display: none; }
+    .center { min-height: 0; }
+  }
+  @media (max-width: 1100px) {
+    .hud { grid-template-columns: 1fr 1fr; }
+    .center { grid-column: 1 / -1; order: -1; }
+    header { order: -2; }
+  }
+  @media (max-width: 680px) {
+    .hud { grid-template-columns: 1fr; padding: 12px 16px calc(16px + env(safe-area-inset-bottom)); gap: 12px; }
+    .globe-wrap { min-height: 340px; }
+    .voice { grid-template-columns: 1fr; justify-items: center; text-align: center; }
+    .cmd { justify-content: center; }
+    #clock { font-size: 38px; }
+    .brand { font-size: 16px; }
+    .status-pill span.txt { display: none; }
+  }
+</style>
+</head>
+<body>
+<div class="grid-bg"></div>
+
+<!-- Boot screen -->
+<div id="boot">
+  <div class="reactor"><div class="ring r1"></div><div class="ring r2"></div><div class="ring r3"></div><div class="core"></div></div>
+  <div id="bootLog"></div>
+  <div id="bootGo">TAP TO WAKE JARVIS</div>
+</div>
+
+<div class="hud">
+  <header>
+    <div class="brand">J.A.R.V.I.S.<small>JUST A RATHER VERY INTELLIGENT SYSTEM · MARK III</small></div>
+    <div class="status-pill"><span class="dot"></span><span class="txt">ALL SYSTEMS NOMINAL</span></div>
+  </header>
+
+  <!-- LEFT -->
+  <div class="col">
+    <section class="panel">
+      <h2>LOCAL TIME <span class="tag" id="tz"></span></h2>
+      <div id="clock" class="big">--:--</div>
+      <div id="date"></div>
+      <div class="row" style="margin-top:10px"><span class="muted">Sunrise</span><b id="sunrise">--</b></div>
+      <div class="row"><span class="muted">Sunset</span><b id="sunset">--</b></div>
+      <div class="row"><span class="muted">Daylight left</span><b id="daylight">--</b></div>
+    </section>
+
+    <section class="panel">
+      <h2>ATMOSPHERICS <span class="tag" id="wxCity"></span></h2>
+      <div class="wx">
+        <div id="wxTemp" class="big">--°</div>
+        <div><div id="wxDesc">Scanning…</div><div class="muted" id="wxHL"></div></div>
+      </div>
+      <div class="row" style="margin-top:10px"><span class="muted">Feels like</span><b id="wxFeels">--</b></div>
+      <div class="row"><span class="muted">Wind</span><b id="wxWind">--</b></div>
+      <div class="row"><span class="muted">Humidity</span><b id="wxHum">--</b></div>
+      <div class="row"><span class="muted">Rain chance today</span><b id="wxRain">--</b></div>
+    </section>
+
+    <section class="panel">
+      <h2>PROTOCOLS <span class="tag">LIVE FEEDS</span></h2>
+      <div id="protocols"></div>
+      <div class="row" style="margin-top:8px"><span class="muted">Session uptime</span><b id="uptime">00:00:00</b></div>
+      <div class="row"><span class="muted">Power</span><b id="battery">--</b></div>
+      <div class="bar"><div id="batteryBar"></div></div>
+    </section>
+  </div>
+
+  <!-- CENTER -->
+  <div class="center">
+    <section class="panel globe-wrap">
+      <div id="globe"></div>
+      <div class="corner tl">GLOBAL OVERWATCH</div>
+      <div class="corner tr" id="issCorner">ISS · ACQUIRING</div>
+      <div class="corner bl legend">
+        <span><i style="background:var(--cyan)"></i>HOME</span>
+        <span><i style="background:var(--gold)"></i>ISS</span>
+        <span><i style="background:var(--green)"></i>AIRCRAFT</span>
+      </div>
+      <div class="globe-btns">
+        <button onclick="look('home')">Home</button>
+        <button onclick="look('iss')">ISS</button>
+        <button onclick="toggleSpin()" id="spinBtn">Spin</button>
+      </div>
+    </section>
+
+    <section class="panel voice">
+      <button class="reactor" id="reactor" title="Talk to Jarvis" aria-label="Talk to Jarvis">
+        <div class="ring r1"></div><div class="ring r2"></div><div class="ring r3"></div><div class="core"></div>
+      </button>
+      <div class="voice-main">
+        <div id="say">Standing by.</div>
+        <div id="heard"></div>
+        <form class="cmd" id="cmdForm" autocomplete="off">
+          <input id="cmdInput" placeholder="Type a command, or tap the reactor and talk">
+          <button type="submit">Send</button>
+          <button type="button" id="muteBtn">Mute</button>
+        </form>
+        <div class="hints">Try <code>status report</code>, <code>where's the ISS</code>, <code>weather</code>, <code>planes</code>, <code>fact</code>, <code>headlines</code>, <code>joke</code></div>
+      </div>
+    </section>
+  </div>
+
+  <!-- RIGHT -->
+  <div class="col">
+    <section class="panel">
+      <h2>ORBITAL <span class="tag">ISS · NORAD 25544</span></h2>
+      <div class="row"><span class="muted">Position</span><b id="issPos">--</b></div>
+      <div class="row"><span class="muted">Over</span><b id="issOver">--</b></div>
+      <div class="row"><span class="muted">Altitude</span><b id="issAlt">--</b></div>
+      <div class="row"><span class="muted">Speed</span><b id="issVel">--</b></div>
+      <div class="row"><span class="muted">Distance from you</span><b id="issDist">--</b></div>
+      <div class="row"><span class="muted">Sunlight</span><b id="issVis">--</b></div>
+    </section>
+
+    <section class="panel">
+      <h2>AIRSPACE <span class="tag" id="airTag">REGIONAL</span></h2>
+      <div class="row"><span class="muted">Aircraft overhead</span><b id="airCount">--</b></div>
+      <div id="airList"></div>
+    </section>
+
+    <section class="panel">
+      <h2>DAILY INTEL <span class="tag">FACT OF THE DAY</span></h2>
+      <div id="fact" class="muted">Retrieving…</div>
+      <div id="onthisday" class="muted"></div>
+    </section>
+
+    <section class="panel">
+      <h2>WIRE <span class="tag">TOP STORIES</span></h2>
+      <ol class="news" id="news"><li class="muted">Retrieving…</li></ol>
+    </section>
+  </div>
+</div>
+
+<script>
+/* ====================== CONFIG ====================== */
+// Change these to make it yours.
+const CONFIG = {
+  name: "Carson",          // what Jarvis calls you in greetings
+  title: "sir",            // "sir", "boss", or your name
+  city: "Minneapolis",
+  lat: 44.98,
+  lon: -93.27,
+  airspaceRadiusDeg: 3.5,  // how big a box to scan for planes around you
+  voiceNames: ["Daniel", "Arthur", "Oliver", "Google UK English Male", "Microsoft Ryan", "Microsoft George"],
+};
+
+/* ====================== STATE ====================== */
+const IS_LOCAL = ["localhost", "127.0.0.1"].includes(location.hostname);
+const state = { wx: null, iss: null, issOver: null, flights: [], fact: null, otd: null, news: [], muted: false, spinning: true, started: Date.now() };
+const $ = (id) => document.getElementById(id);
+const fmt = (n, d = 0) => Number(n).toLocaleString("en-US", { maximumFractionDigits: d, minimumFractionDigits: d });
+
+/* ====================== PROTOCOL STATUS ====================== */
+const PROTOCOLS = { wx: "Atmospherics", iss: "Orbital tracking", air: "Airspace", fact: "Daily intel", news: "Newswire", voice: "Voice synthesis" };
+function renderProtocols() {
+  $("protocols").innerHTML = Object.entries(PROTOCOLS).map(([k, label]) => {
+    const s = protoState[k] || "pending";
+    const txt = s === "ok" ? "ONLINE" : s === "bad" ? "OFFLINE" : "…";
+    return `<div class="proto ${s}"><i></i><span>${label}</span><span>${txt}</span></div>`;
+  }).join("");
+}
+const protoState = {};
+function setProto(k, s) { protoState[k] = s; renderProtocols(); }
+renderProtocols();
+
+async function getJSON(url, ms = 9000) {
+  const ctl = new AbortController();
+  const t = setTimeout(() => ctl.abort(), ms);
+  try {
+    const r = await fetch(url, { signal: ctl.signal });
+    if (!r.ok) throw new Error(r.status);
+    return await r.json();
+  } finally { clearTimeout(t); }
+}
+
+/* ====================== CLOCK ====================== */
+function tickClock() {
+  const d = new Date();
+  const h = d.getHours() % 12 || 12, m = String(d.getMinutes()).padStart(2, "0"), s = String(d.getSeconds()).padStart(2, "0");
+  $("clock").innerHTML = `${h}:${m}<span class="sec"> ${s} ${d.getHours() < 12 ? "AM" : "PM"}</span>`;
+  $("date").textContent = d.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" });
+  $("tz").textContent = Intl.DateTimeFormat().resolvedOptions().timeZone.split("/").pop().replace("_", " ").toUpperCase();
+  const up = Math.floor((Date.now() - state.started) / 1000);
+  $("uptime").textContent = [up / 3600, (up % 3600) / 60, up % 60].map((v) => String(Math.floor(v)).padStart(2, "0")).join(":");
+  if (state.wx) {
+    const left = new Date(state.wx.daily.sunset[0]) - d;
+    $("daylight").textContent = left > 0 ? `${Math.floor(left / 3.6e6)}h ${Math.floor((left % 3.6e6) / 6e4)}m` : "Nightfall";
+  }
+}
+setInterval(tickClock, 1000); tickClock();
+
+/* ====================== WEATHER (Open-Meteo, no key) ====================== */
+const WX = {
+  0: "Clear skies", 1: "Mostly clear", 2: "Partly cloudy", 3: "Overcast", 45: "Fog", 48: "Freezing fog",
+  51: "Light drizzle", 53: "Drizzle", 55: "Heavy drizzle", 61: "Light rain", 63: "Rain", 65: "Heavy rain",
+  66: "Freezing rain", 67: "Freezing rain", 71: "Light snow", 73: "Snow", 75: "Heavy snow", 77: "Snow grains",
+  80: "Rain showers", 81: "Rain showers", 82: "Violent showers", 85: "Snow showers", 86: "Heavy snow showers",
+  95: "Thunderstorms", 96: "Thunderstorms with hail", 99: "Severe thunderstorms",
+};
+const timeOnly = (iso) => new Date(iso).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+async function loadWeather() {
+  try {
+    const u = `https://api.open-meteo.com/v1/forecast?latitude=${CONFIG.lat}&longitude=${CONFIG.lon}` +
+      `&current=temperature_2m,apparent_temperature,relative_humidity_2m,weather_code,wind_speed_10m,wind_direction_10m` +
+      `&daily=temperature_2m_max,temperature_2m_min,sunrise,sunset,precipitation_probability_max` +
+      `&temperature_unit=fahrenheit&wind_speed_unit=mph&timezone=auto&forecast_days=1`;
+    const w = await getJSON(u);
+    state.wx = w;
+    const c = w.current, dly = w.daily;
+    $("wxCity").textContent = CONFIG.city.toUpperCase();
+    $("wxTemp").textContent = `${Math.round(c.temperature_2m)}°`;
+    $("wxDesc").textContent = WX[c.weather_code] || "Unusual conditions";
+    $("wxHL").textContent = `H ${Math.round(dly.temperature_2m_max[0])}° · L ${Math.round(dly.temperature_2m_min[0])}°`;
+    $("wxFeels").textContent = `${Math.round(c.apparent_temperature)}°F`;
+    $("wxWind").textContent = `${Math.round(c.wind_speed_10m)} mph ${compass(c.wind_direction_10m)}`;
+    $("wxHum").textContent = `${c.relative_humidity_2m}%`;
+    $("wxRain").textContent = `${dly.precipitation_probability_max[0] ?? 0}%`;
+    $("sunrise").textContent = timeOnly(dly.sunrise[0]);
+    $("sunset").textContent = timeOnly(dly.sunset[0]);
+    setProto("wx", "ok");
+  } catch (e) { setProto("wx", "bad"); $("wxDesc").textContent = "Feed offline"; }
+}
+const compass = (deg) => ["N", "NE", "E", "SE", "S", "SW", "W", "NW"][Math.round(deg / 45) % 8];
+
+/* ====================== ISS (wheretheiss.at, no key) ====================== */
+const trail = [];
+function haversineMi(a, b, c, d) {
+  const R = 3958.8, toR = Math.PI / 180;
+  const dLat = (c - a) * toR, dLon = (d - b) * toR;
+  const x = Math.sin(dLat / 2) ** 2 + Math.cos(a * toR) * Math.cos(c * toR) * Math.sin(dLon / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(x));
+}
+async function loadISS() {
+  try {
+    const s = await getJSON("https://api.wheretheiss.at/v1/satellites/25544?units=miles", 7000);
+    state.iss = s;
+    trail.push([s.latitude, s.longitude, 0.066]);
+    if (trail.length > 120) trail.shift();
+    $("issPos").textContent = `${fmt(Math.abs(s.latitude), 2)}°${s.latitude >= 0 ? "N" : "S"} ${fmt(Math.abs(s.longitude), 2)}°${s.longitude >= 0 ? "E" : "W"}`;
+    $("issAlt").textContent = `${fmt(s.altitude)} mi`;
+    $("issVel").textContent = `${fmt(s.velocity)} mph`;
+    $("issDist").textContent = `${fmt(haversineMi(CONFIG.lat, CONFIG.lon, s.latitude, s.longitude))} mi`;
+    $("issVis").textContent = s.visibility === "daylight" ? "In daylight" : "In Earth's shadow";
+    $("issCorner").textContent = `ISS · ${fmt(s.velocity)} MPH`;
+    setProto("iss", "ok");
+    updateGlobe();
+  } catch (e) { if (!state.iss) setProto("iss", "bad"); }
+}
+async function loadISSOver() {
+  if (!state.iss) return;
+  try {
+    const r = await getJSON(`https://api.wheretheiss.at/v1/coordinates/${state.iss.latitude},${state.iss.longitude}`, 6000);
+    state.issOver = r.country_code && r.country_code !== "??" ? countryName(r.country_code) : oceanGuess(state.iss.latitude, state.iss.longitude);
+  } catch (e) { state.issOver = oceanGuess(state.iss.latitude, state.iss.longitude); }
+  $("issOver").textContent = state.issOver;
+}
+function countryName(code) {
+  try { return new Intl.DisplayNames(["en"], { type: "region" }).of(code); } catch (e) { return code; }
+}
+function oceanGuess(lat, lon) {
+  if (lat < -60) return "the Southern Ocean";
+  if (lat > 66) return "the Arctic";
+  if (lon > -70 && lon < 20) return "the Atlantic Ocean";
+  if (lon >= 20 && lon < 120 && lat < 30) return "the Indian Ocean";
+  return "the Pacific Ocean";
+}
+
+/* ====================== AIRSPACE (OpenSky, no key) ====================== */
+async function loadFlights() {
+  const r = CONFIG.airspaceRadiusDeg;
+  const q = `lamin=${CONFIG.lat - r}&lomin=${CONFIG.lon - r * 1.4}&lamax=${CONFIG.lat + r}&lomax=${CONFIG.lon + r * 1.4}`;
+  const urls = IS_LOCAL ? [`/api/flights?${q}`] : [`https://opensky-network.org/api/states/all?${q}`];
+  for (const u of urls) {
+    try {
+      const d = await getJSON(u, 12000);
+      state.flights = (d.states || []).filter((s) => !s[8] && s[5] != null && s[6] != null).map((s) => ({
+        call: (s[1] || "").trim() || s[0].toUpperCase(), country: s[2], lon: s[5], lat: s[6],
+        altFt: s[7] ? s[7] * 3.281 : 0, mph: s[9] ? s[9] * 2.237 : 0,
+        dist: haversineMi(CONFIG.lat, CONFIG.lon, s[6], s[5]),
+      })).sort((a, b) => a.dist - b.dist);
+      $("airCount").textContent = state.flights.length;
+      $("airList").innerHTML = state.flights.slice(0, 5).map((f) =>
+        `<div class="row"><span>${f.call}</span><b>${fmt(f.altFt)} ft · ${fmt(f.dist)} mi</b></div>`).join("");
+      $("airTag").textContent = `${Math.round(r * 69)} MI RADIUS`;
+      setProto("air", "ok");
+      updateGlobe();
+      return;
+    } catch (e) { /* try next */ }
+  }
+  if (!state.flights.length) { setProto("air", "bad"); $("airCount").textContent = "Offline"; }
+}
+
+/* ====================== FACT + ON THIS DAY ====================== */
+async function loadFact() {
+  try {
+    const f = await getJSON("https://uselessfacts.jsph.pl/api/v2/facts/today?language=en");
+    state.fact = f.text.replace(/`/g, "'");
+    $("fact").textContent = state.fact; $("fact").classList.remove("muted");
+    setProto("fact", "ok");
+  } catch (e) { setProto("fact", "bad"); $("fact").textContent = "Intel feed offline."; }
+  try {
+    const d = new Date(), mm = String(d.getMonth() + 1).padStart(2, "0"), dd = String(d.getDate()).padStart(2, "0");
+    const o = await getJSON(`https://api.wikimedia.org/feed/v1/wikipedia/en/onthisday/selected/${mm}/${dd}`);
+    const pick = o.selected[Math.floor(Math.random() * Math.min(o.selected.length, 6))];
+    state.otd = { year: pick.year, text: pick.text };
+    $("onthisday").innerHTML = `<b style="color:var(--cyan);font-family:Orbitron;font-size:11px">ON THIS DAY · ${pick.year}</b><br>${pick.text}`;
+  } catch (e) { /* optional */ }
+}
+
+/* ====================== NEWS (Hacker News, no key) ====================== */
+async function loadNews() {
+  try {
+    const ids = (await getJSON("https://hacker-news.firebaseio.com/v0/topstories.json")).slice(0, 6);
+    const items = await Promise.all(ids.map((id) => getJSON(`https://hacker-news.firebaseio.com/v0/item/${id}.json`).catch(() => null)));
+    state.news = items.filter(Boolean);
+    $("news").innerHTML = state.news.map((n) =>
+      `<li><a href="${n.url || "https://news.ycombinator.com/item?id=" + n.id}" target="_blank" rel="noopener">${escapeHTML(n.title)}</a></li>`).join("");
+    setProto("news", "ok");
+  } catch (e) { setProto("news", "bad"); $("news").innerHTML = "<li class='muted'>Newswire offline.</li>"; }
+}
+const escapeHTML = (s) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+/* ====================== BATTERY ====================== */
+if (navigator.getBattery) {
+  navigator.getBattery().then((b) => {
+    const up = () => { $("battery").textContent = `${Math.round(b.level * 100)}%${b.charging ? " · charging" : ""}`; $("batteryBar").style.width = `${b.level * 100}%`; };
+    up(); b.addEventListener("levelchange", up); b.addEventListener("chargingchange", up);
+  });
+} else { $("battery").textContent = "Arc reactor · 100%"; $("batteryBar").style.width = "100%"; }
+
+/* ====================== GLOBE ====================== */
+let globe = null;
+function initGlobe() {
+  const el = $("globe");
+  if (typeof Globe !== "function") { el.innerHTML = "<div style='padding:40px;color:var(--muted)'>Globe module offline.</div>"; return; }
+  globe = Globe()(el)
+    .backgroundColor("rgba(0,0,0,0)")
+    .globeImageUrl("https://unpkg.com/three-globe@2.45.3/example/img/earth-night.jpg")
+    .bumpImageUrl("https://unpkg.com/three-globe@2.45.3/example/img/earth-topology.png")
+    .showAtmosphere(true).atmosphereColor("#34e4ff").atmosphereAltitude(0.2)
+    .ringsData([{ lat: CONFIG.lat, lng: CONFIG.lon }])
+    .ringColor(() => (t) => `rgba(52,228,255,${1 - t})`).ringMaxRadius(4).ringPropagationSpeed(1.6).ringRepeatPeriod(1400)
+    .pointLat("lat").pointLng("lng").pointColor("color").pointAltitude("alt").pointRadius("r")
+    .pathPoints("pts").pathPointLat((p) => p[0]).pathPointLng((p) => p[1]).pathPointAlt((p) => p[2])
+    .pathColor(() => ["rgba(255,180,58,0.05)", "rgba(255,180,58,0.9)"]).pathStroke(1.5)
+    .htmlLat("lat").htmlLng("lng").htmlAltitude("alt")
+    .htmlElement(() => { const d = document.createElement("div"); d.className = "iss-tag"; d.textContent = "ISS"; return d; });
+  globe.controls().autoRotate = true;
+  globe.controls().autoRotateSpeed = 0.35;
+  globe.pointOfView({ lat: CONFIG.lat - 10, lng: CONFIG.lon, altitude: 2.4 }, 0);
+  const resize = () => globe.width(el.clientWidth).height(el.clientHeight);
+  new ResizeObserver(resize).observe(el); resize();
+  updateGlobe();
+}
+function updateGlobe() {
+  if (!globe) return;
+  const pts = [{ lat: CONFIG.lat, lng: CONFIG.lon, color: "#34e4ff", alt: 0.01, r: 0.45 }];
+  state.flights.forEach((f) => pts.push({ lat: f.lat, lng: f.lon, color: "#4dffb0", alt: 0.005 + f.altFt / 4e6, r: 0.12 }));
+  globe.pointsData(pts);
+  if (state.iss) {
+    globe.htmlElementsData([{ lat: state.iss.latitude, lng: state.iss.longitude, alt: 0.066 }]);
+    // break trail when it wraps across the date line so it doesn't draw a line across the globe
+    const segs = [[]];
+    trail.forEach((p, i) => { if (i && Math.abs(p[1] - trail[i - 1][1]) > 180) segs.push([]); segs[segs.length - 1].push(p); });
+    globe.pathsData(segs.filter((s) => s.length > 1).map((pts) => ({ pts })));
+  }
+}
+function look(where) {
+  if (!globe) return;
+  state.spinning = false; globe.controls().autoRotate = false; $("spinBtn").classList.remove("on");
+  if (where === "iss" && state.iss) globe.pointOfView({ lat: state.iss.latitude, lng: state.iss.longitude, altitude: 1.6 }, 1600);
+  else globe.pointOfView({ lat: CONFIG.lat, lng: CONFIG.lon, altitude: 0.9 }, 1600);
+}
+function toggleSpin() {
+  if (!globe) return;
+  state.spinning = !state.spinning; globe.controls().autoRotate = state.spinning;
+  if (state.spinning) globe.pointOfView({ altitude: 2.4 }, 1200);
+}
+
+/* ====================== VOICE OUT ====================== */
+let voice = null;
+function pickVoice() {
+  const vs = speechSynthesis.getVoices();
+  for (const n of CONFIG.voiceNames) { const v = vs.find((x) => x.name.includes(n)); if (v) return v; }
+  return vs.find((v) => v.lang === "en-GB") || vs.find((v) => v.lang.startsWith("en")) || null;
+}
+if ("speechSynthesis" in window) { speechSynthesis.onvoiceschanged = () => { voice = pickVoice(); }; voice = pickVoice(); }
+
+function speak(text) {
+  $("say").textContent = text;
+  if (state.muted) return;
+  const r = $("reactor");
+  if (IS_LOCAL) { // the Mac app speaks with the real macOS voice, no click needed
+    r.classList.add("speaking");
+    fetch("/api/say", { method: "POST", body: text }).then((res) => res.json()).then((j) => {
+      setTimeout(() => r.classList.remove("speaking"), Math.max(1500, (j.seconds || text.length / 14) * 1000));
+      setProto("voice", "ok");
+    }).catch(() => { r.classList.remove("speaking"); browserSpeak(text); });
+    return;
+  }
+  browserSpeak(text);
+}
+function browserSpeak(text) {
+  if (!("speechSynthesis" in window)) { setProto("voice", "bad"); return; }
+  speechSynthesis.cancel();
+  const u = new SpeechSynthesisUtterance(text);
+  if (voice) u.voice = voice;
+  u.rate = 1.02; u.pitch = 0.95;
+  const r = $("reactor");
+  u.onstart = () => r.classList.add("speaking");
+  u.onend = u.onerror = () => r.classList.remove("speaking");
+  speechSynthesis.speak(u);
+  setProto("voice", "ok");
+}
+$("muteBtn").onclick = () => {
+  state.muted = !state.muted; $("muteBtn").classList.toggle("on", state.muted); $("muteBtn").textContent = state.muted ? "Muted" : "Mute";
+  if (state.muted && "speechSynthesis" in window) speechSynthesis.cancel();
+};
+
+/* ====================== LINES ====================== */
+const pick = (a) => a[Math.floor(Math.random() * a.length)];
+function greetingWord() { const h = new Date().getHours(); return h < 5 ? "You're up late" : h < 12 ? "Good morning" : h < 17 ? "Good afternoon" : "Good evening"; }
+function timeLine() { return `It's ${new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}.`; }
+function weatherLine() {
+  if (!state.wx) return "I can't reach the weather feed at the moment.";
+  const c = state.wx.current, d = state.wx.daily;
+  let s = `It's ${Math.round(c.temperature_2m)} degrees and ${(WX[c.weather_code] || "unusual").toLowerCase()} in ${CONFIG.city}, heading for a high of ${Math.round(d.temperature_2m_max[0])}.`;
+  const rain = d.precipitation_probability_max[0];
+  if (rain >= 50) s += ` ${rain} percent chance of rain, so I'd bring a jacket.`;
+  if (c.temperature_2m < 32) s += " Dress warm, it's below freezing.";
+  return s;
+}
+function issLine() {
+  if (!state.iss) return "I've lost contact with the space station. Probably nothing.";
+  const s = state.iss;
+  return `The International Space Station is over ${state.issOver || "somewhere I can't quite name"}, about ${fmt(haversineMi(CONFIG.lat, CONFIG.lon, s.latitude, s.longitude))} miles from you, moving at ${fmt(s.velocity)} miles an hour.`;
+}
+function flightLine() {
+  if (!state.flights.length) return "Airspace data is offline, or the skies are empty. I'll assume the former.";
+  const f = state.flights[0];
+  return `I'm tracking ${state.flights.length} aircraft in your area. The closest is ${spell(f.call)}, ${fmt(f.dist)} miles out at ${fmt(Math.round(f.altFt / 100) * 100)} feet.`;
+}
+const spell = (call) => call.replace(/^([A-Z]{3})(\d+)/, "$1 $2");
+function factLine() { return state.fact ? `Today's fact: ${state.fact}` : "My fact archive is unavailable. A first, I assure you."; }
+function newsLine() {
+  if (!state.news.length) return "The newswire is quiet.";
+  return `Top story right now: ${state.news[0].title}. Then, ${state.news[1]?.title || "not much else"}.`;
+}
+function otdLine() { return state.otd ? `On this day in ${state.otd.year}, ${state.otd.text}` : "History is being uncooperative today."; }
+function briefing() {
+  return `${greetingWord()}, ${CONFIG.name}. ${timeLine()} ${weatherLine()} ${issLine()} ${factLine()}`;
+}
+const JOKES = [
+  "I'd tell you a UDP joke, but you might not get it.",
+  "I ran the numbers on your fantasy lineup. I'd rather not discuss it.",
+  "Why did the stock break up with the bond? It needed more volatility in its life.",
+  "I've calculated a 97 percent chance you'll ask me for another joke. The other 3 percent is you going for a swim.",
+  "There are 10 kinds of people. Those who understand binary, and those who don't.",
+];
+
+/* ====================== COMMANDS ====================== */
+const COMMANDS = [
+  [/status|report|brief|update|morning|what.?s up|sitrep/, () => briefing()],
+  [/weather|temperature|outside|cold|hot|rain|snow/, () => weatherLine()],
+  [/\biss\b|space station|satellite|orbit/, () => { look("iss"); return issLine(); }],
+  [/plane|flight|aircraft|airspace|sky/, () => { look("home"); return flightLine(); }],
+  [/fact|teach|learn|something interesting/, () => factLine()],
+  [/history|on this day/, () => otdLine()],
+  [/news|headline|story|stories/, () => newsLine()],
+  [/time|clock/, () => timeLine()],
+  [/joke|funny|laugh/, () => pick(JOKES)],
+  [/home|minnesota|where am i/, () => { look("home"); return `Centering on ${CONFIG.city}, ${CONFIG.title}.`; }],
+  [/spin|rotate/, () => { if (!state.spinning) toggleSpin(); return "Resuming global rotation."; }],
+  [/stop|freeze|hold/, () => { if (state.spinning) toggleSpin(); return "Holding position."; }],
+  [/mute|quiet|shut up/, () => { $("muteBtn").click(); return "Going quiet."; }],
+  [/thank/, () => pick(["Always a pleasure, " + CONFIG.title + ".", "Anytime.", "At your service."])],
+  [/who are you|your name|what are you/, () => "J.A.R.V.I.S. Just A Rather Very Intelligent System. Mark three, currently running on public data and charm."],
+  [/how are you/, () => "All systems nominal. Thank you for asking. Nobody asks."],
+  [/hello|hey|hi\b|wake|you there/, () => `At your service, ${CONFIG.title}.`],
+  [/swim|pool|workout|lift/, () => "Water's always faster than it looks. Go get some laps in, I'll hold down the fort."],
+];
+function handle(raw) {
+  const t = raw.toLowerCase().replace(/^(hey |ok |okay )?jarvis[, ]*/, "").trim();
+  $("heard").textContent = raw ? `› ${raw}` : "";
+  if (!t) return speak(`Yes, ${CONFIG.title}?`);
+  for (const [re, fn] of COMMANDS) if (re.test(t)) return speak(fn());
+  speak(pick([
+    `I'm afraid that's beyond my current protocols, ${CONFIG.title}.`,
+    "That one's not in my programming yet. Mark four, perhaps.",
+    "I didn't quite catch that. Try asking for a status report.",
+  ]));
+}
+$("cmdForm").onsubmit = (e) => { e.preventDefault(); const v = $("cmdInput").value; $("cmdInput").value = ""; handle(v); };
+
+/* ====================== VOICE IN ====================== */
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+let rec = null, listening = false;
+if (SR) {
+  rec = new SR(); rec.lang = "en-US"; rec.interimResults = true; rec.continuous = false;
+  rec.onresult = (e) => {
+    const res = e.results[e.results.length - 1];
+    $("heard").textContent = `› ${res[0].transcript}`;
+    if (res.isFinal) handle(res[0].transcript);
+  };
+  rec.onend = () => { listening = false; $("reactor").classList.remove("listening"); };
+  rec.onerror = (e) => { if (e.error === "not-allowed") speak("I need microphone access to hear you. You can type instead."); };
+}
+$("reactor").onclick = () => {
+  if (!rec) { $("cmdInput").focus(); return speak("Voice input isn't supported in this browser. Type away."); }
+  if (listening) { rec.stop(); return; }
+  if ("speechSynthesis" in window) speechSynthesis.cancel();
+  try { rec.start(); listening = true; $("reactor").classList.add("listening"); $("say").textContent = "Listening…"; } catch (e) { }
+};
+document.addEventListener("keydown", (e) => { // spacebar to talk when not typing
+  if (e.code === "Space" && document.activeElement !== $("cmdInput")) { e.preventDefault(); $("reactor").click(); }
+});
+
+/* ====================== BOOT ====================== */
+const BOOT = ["Initializing core systems", "Calibrating atmospherics", "Acquiring orbital lock", "Scanning regional airspace", "Retrieving daily intel", "Voice synthesis online"];
+async function boot() {
+  const log = $("bootLog");
+  const loads = Promise.allSettled([loadWeather(), loadISS().then(loadISSOver), loadFlights(), loadFact(), loadNews()]);
+  for (const line of BOOT) {
+    log.innerHTML += `<div>${line.toUpperCase()}<span class="ok">OK</span></div>`;
+    await new Promise((r) => setTimeout(r, 260));
+  }
+  await Promise.race([loads, new Promise((r) => setTimeout(r, 6000))]);
+  initGlobe();
+  if (IS_LOCAL) { // Mac app: no tap needed, macOS does the talking
+    setTimeout(wake, 400);
+  } else {
+    $("bootGo").style.opacity = 1;
+    $("boot").addEventListener("click", wake, { once: true });
+  }
+}
+function wake() {
+  $("boot").classList.add("gone");
+  speak(briefing());
+}
+boot();
+
+/* ====================== REFRESH LOOPS ====================== */
+setInterval(loadISS, 5000);
+setInterval(loadISSOver, 60000);
+setInterval(loadFlights, 30000);
+setInterval(loadWeather, 10 * 60000);
+setInterval(loadNews, 15 * 60000);
+</script>
+</body>
+</html>
