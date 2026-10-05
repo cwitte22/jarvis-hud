@@ -330,7 +330,7 @@ const CONFIG = {
   city: "Minneapolis",
   lat: 44.98,
   lon: -93.27,
-  airspaceRadiusDeg: 3.5,  // how big a box to scan for planes around you
+  airspaceRadiusDeg: 2,    // box around you to scan for planes. Keep at 2 or less: bigger boxes cost double on OpenSky's free daily limit
   voiceNames: ["Daniel", "Arthur", "Oliver", "Google UK English Male", "Microsoft Ryan", "Microsoft George"],
 };
 
@@ -459,7 +459,13 @@ function oceanGuess(lat, lon) {
 async function loadFlights() {
   const r = CONFIG.airspaceRadiusDeg;
   const q = `lamin=${CONFIG.lat - r}&lomin=${CONFIG.lon - r * 1.4}&lamax=${CONFIG.lat + r}&lomax=${CONFIG.lon + r * 1.4}`;
-  const urls = IS_LOCAL ? [`/api/flights?${q}`] : [`https://opensky-network.org/api/states/all?${q}`];
+  if (!IS_LOCAL) { // OpenSky blocks browsers from calling it directly, so planes only work through the Mac app
+    $("airCount").textContent = "Mac app only";
+    $("airList").innerHTML = `<div class="muted" style="font-size:14px;padding-top:4px">Run jarvis.py on your Mac to track planes overhead.</div>`;
+    delete PROTOCOLS.air; renderProtocols();
+    return;
+  }
+  const urls = [`/api/flights?${q}`];
   for (const u of urls) {
     try {
       const d = await getJSON(u, 12000);
@@ -490,7 +496,8 @@ async function loadFact() {
   } catch (e) { setProto("fact", "bad"); $("fact").textContent = "Intel feed offline."; }
   try {
     const d = new Date(), mm = String(d.getMonth() + 1).padStart(2, "0"), dd = String(d.getDate()).padStart(2, "0");
-    const o = await getJSON(`https://api.wikimedia.org/feed/v1/wikipedia/en/onthisday/selected/${mm}/${dd}`);
+    const o = await getJSON(`https://en.wikipedia.org/api/rest_v1/feed/onthisday/selected/${mm}/${dd}`)
+      .catch(() => getJSON(`https://api.wikimedia.org/feed/v1/wikipedia/en/onthisday/selected/${mm}/${dd}`));
     const pick = o.selected[Math.floor(Math.random() * Math.min(o.selected.length, 6))];
     state.otd = { year: pick.year, text: pick.text };
     $("onthisday").innerHTML = `<b style="color:var(--cyan);font-family:Orbitron;font-size:11px">ON THIS DAY · ${pick.year}</b><br>${pick.text}`;
@@ -502,7 +509,7 @@ async function loadNews() {
   try {
     const ids = (await getJSON("https://hacker-news.firebaseio.com/v0/topstories.json")).slice(0, 6);
     const items = await Promise.all(ids.map((id) => getJSON(`https://hacker-news.firebaseio.com/v0/item/${id}.json`).catch(() => null)));
-    state.news = items.filter(Boolean);
+    state.news = items.filter((n) => n && n.title);
     $("news").innerHTML = state.news.map((n) =>
       `<li><a href="${n.url || "https://news.ycombinator.com/item?id=" + n.id}" target="_blank" rel="noopener">${escapeHTML(n.title)}</a></li>`).join("");
     setProto("news", "ok");
@@ -626,6 +633,7 @@ function issLine() {
   return `The International Space Station is over ${state.issOver || "somewhere I can't quite name"}, about ${fmt(haversineMi(CONFIG.lat, CONFIG.lon, s.latitude, s.longitude))} miles from you, moving at ${fmt(s.velocity)} miles an hour.`;
 }
 function flightLine() {
+  if (!IS_LOCAL) return "Airspace tracking runs through the Mac app. Fire me up there and I'll show you every plane overhead.";
   if (!state.flights.length) return "Airspace data is offline, or the skies are empty. I'll assume the former.";
   const f = state.flights[0];
   return `I'm tracking ${state.flights.length} aircraft in your area. The closest is ${spell(f.call)}, ${fmt(f.dist)} miles out at ${fmt(Math.round(f.altFt / 100) * 100)} feet.`;
@@ -732,7 +740,7 @@ boot();
 /* ====================== REFRESH LOOPS ====================== */
 setInterval(loadISS, 5000);
 setInterval(loadISSOver, 60000);
-setInterval(loadFlights, 30000);
+setInterval(loadFlights, 5 * 60000); // OpenSky's free tier is 400 calls a day, this uses about 290
 setInterval(loadWeather, 10 * 60000);
 setInterval(loadNews, 15 * 60000);
 </script>

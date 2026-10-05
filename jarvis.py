@@ -102,10 +102,10 @@ class Handler(SimpleHTTPRequestHandler):
 
     def flights(self):
         # OpenSky doesn't always allow browsers to call it directly, so the Mac fetches it.
-        # Cached 20s so we stay well under their free rate limit.
+        # Cached 4 min so we stay under their free limit of 400 calls a day.
         q = self.path.split("?", 1)[1] if "?" in self.path else ""
         hit = _flight_cache.get(q)
-        if hit and time.time() - hit[0] < 20:
+        if hit and time.time() - hit[0] < 240:
             data = hit[1]
         else:
             try:
